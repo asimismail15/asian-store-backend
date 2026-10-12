@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const { protect, admin } = require('../middleware/authMiddleware');
@@ -8,12 +9,16 @@ const { protect, admin } = require('../middleware/authMiddleware');
 router.get('/', async (req, res) => {
   try {
     const pageSize = 6;
-    const page = Number(req.query.page) || 1;
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    if (!Number.isSafeInteger(page) || page < 1) return res.status(400).json({ message: 'Page must be a positive whole number.' });
+    const rawKeyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
+    if (rawKeyword.length > 80) return res.status(400).json({ message: 'Search terms must be 80 characters or fewer.' });
 
-    const keyword = req.query.keyword
+    const escapedKeyword = rawKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const keyword = escapedKeyword
       ? {
           title: {
-            $regex: req.query.keyword,
+            $regex: escapedKeyword,
             $options: 'i',
           },
         }
@@ -33,20 +38,23 @@ router.get('/', async (req, res) => {
       totalProducts: count
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Product listing failed:', err.message);
+    res.status(500).json({ message: 'Unable to load products.' });
   }
 });
 
 // 2. Get Single Product by ID (GET - Public)
 router.get('/:id', async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid product id.' });
     const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ message: "Product nahi mila!" });
     }
     res.json(product);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Product lookup failed:', err.message);
+    res.status(500).json({ message: 'Unable to load this product.' });
   }
 });
 
